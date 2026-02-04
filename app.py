@@ -132,4 +132,109 @@ def recommend_logic_final(start_lat, start_lng, mode):
             filter_code = "CE7"
 
         places = search_keyword_kakao(query, target_lat, target_lng)
-        valid_places = [p for p in places if p['category_group_code'] == filter
+        valid_places = [p for p in places if p['category_group_code'] == filter_code]
+        
+        if valid_places:
+            picks = random.sample(valid_places, min(3, len(valid_places)))
+            return picks, region_name, query, moved_km
+    return [], None, None, 0
+
+# --- 4. UI 구성 ---
+st.title("📍 소희야 어디갈까")
+
+if 'KAKAO_API_KEY' not in st.secrets:
+    st.error("🚨 카카오 API 키가 없습니다!")
+    st.stop()
+
+loc = get_geolocation()
+
+if loc:
+    cur_lat = loc['coords']['latitude']
+    cur_lng = loc['coords']['longitude']
+    
+    st.success("📍 GPS 연결 성공!")
+    
+    tab1, tab2 = st.tabs(["🍽️ 찐맛집", "☕ 예쁜카페"])
+    
+    # [식당 탭]
+    with tab1:
+        st.info("랜덤 동네의 맛집을 **대중교통 예상시간**과 함께 보여줄게!")
+        if st.button("맛집 찾아줘!", key="btn_food"):
+            with st.spinner("소희가 맛집 찾는 중... 😋"):
+                picks, region, query, km = recommend_logic_final(cur_lat, cur_lng, "식당")
+            
+            if picks:
+                st.success(f"🚀 **{region}** (직선거리 {km:.1f}km) 도착!")
+                st.write("---")
+                
+                for p in picks:
+                    name = p['place_name']
+                    cat = p['category_name'].split('>')[-1].strip()
+                    # 카카오 길찾기 URL (출발지 생략하면 현위치 기준 길찾기 자동 실행)
+                    # p['y'] = 위도, p['x'] = 경도
+                    route_url = f"https://map.kakao.com/link/to/{name},{p['y']},{p['x']}"
+                    
+                    # [시간 계산]
+                    place_lat = float(p['y'])
+                    place_lng = float(p['x'])
+                    dist, mins = calculate_time_and_distance(cur_lat, cur_lng, place_lat, place_lng)
+                    
+                    img_url = get_category_image(cat)
+                    
+                    col1, col2 = st.columns([1, 2])
+                    with col1:
+                        st.image(img_url, use_container_width=True)
+                    with col2:
+                        st.markdown(f"<div class='place-title'>{name}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='time-badge'>⏱️ 대중교통 약 {mins}분 예상</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='place-info'>🍽️ {cat}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='place-info'>📍 {p['road_address_name']}</div>", unsafe_allow_html=True)
+                        # 버튼: 단순 검색이 아니라 '길찾기' 링크로 변경
+                        st.link_button(f"👉 대중교통 길찾기 (카카오맵)", route_url)
+                    
+                    st.write("---")
+            else:
+                st.error("맛집을 못 찾았어.. 다시 돌려줘!")
+
+    # [카페 탭]
+    with tab2:
+        st.info("랜덤 동네의 카페를 **대중교통 예상시간**과 함께 보여줄게!")
+        if st.button("카페 찾아줘!", key="btn_cafe"):
+            with st.spinner("소희가 예쁜 카페 찾는 중... ✨"):
+                picks, region, query, km = recommend_logic_final(cur_lat, cur_lng, "카페")
+            
+            if picks:
+                st.success(f"🚀 **{region}** (직선거리 {km:.1f}km) 도착!")
+                st.write("---")
+                
+                for p in picks:
+                    name = p['place_name']
+                    cat = p['category_name'].split('>')[-1].strip()
+                    
+                    # 네이버 대중교통 길찾기 URL (도착지 자동 설정)
+                    naver_route_url = f"https://m.map.naver.com/route/public/list?destination={name}&dest_lat={p['y']}&dest_lng={p['x']}&mode=transit"
+                    
+                    # [시간 계산]
+                    place_lat = float(p['y'])
+                    place_lng = float(p['x'])
+                    dist, mins = calculate_time_and_distance(cur_lat, cur_lng, place_lat, place_lng)
+
+                    img_url = get_category_image(cat)
+                    
+                    col1, col2 = st.columns([1, 2])
+                    with col1:
+                        st.image(img_url, use_container_width=True)
+                    with col2:
+                        st.markdown(f"<div class='place-title'>{name}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='time-badge'>⏱️ 대중교통 약 {mins}분 예상</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='place-info'>☕ {cat}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='place-info'>📍 {p['road_address_name']}</div>", unsafe_allow_html=True)
+                        # 버튼: 네이버 대중교통 길찾기로 연결
+                        st.link_button(f"👉 대중교통 길찾기 (네이버)", naver_route_url)
+                        
+                    st.write("---")
+            else:
+                st.error("카페를 못 찾았어.. 다시 돌려줘!")
+
+else:
+    st.info("👆 [내 위치 찾기] 버튼을 눌러주세요.")
