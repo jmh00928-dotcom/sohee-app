@@ -1,8 +1,9 @@
 import streamlit as st
 import random
-import time
+import requests
+from streamlit_js_eval import get_geolocation # GPS 도구 가져오기
 
-# --- 1. 페이지 설정 및 디자인 ---
+# --- 1. 페이지 설정 ---
 st.set_page_config(page_title="소희야 어디갈까", page_icon="📍")
 
 st.markdown("""
@@ -12,152 +13,144 @@ st.markdown("""
         border-radius: 15px;
         height: 3.5em;
         font-weight: bold;
-        background-color: #FF6F61;
-        color: white;
+        background-color: #FEE500;
+        color: #191919;
     }
     .result-card {
-        background-color: #f9f9f9;
+        background-color: #fff;
         padding: 20px;
         border-radius: 15px;
         margin-bottom: 20px;
         border: 1px solid #ddd;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. 데이터 (가상 데이터베이스) ---
-# 실제로는 API로 가져와야 하지만, 프로토타입에서는 이렇게 목록을 만들어두고 씁니다.
-food_db = [
-    {"name": "감성타코", "menu": "멕시칸", "score": 4.5},
-    {"name": "우래옥", "menu": "평양냉면", "score": 4.6},
-    {"name": "다운타우너", "menu": "수제버거", "score": 4.4},
-    {"name": "정돈", "menu": "프리미엄 돈카츠", "score": 4.7},
-    {"name": "땀땀", "menu": "곱창 쌀국수", "score": 4.3},
-    {"name": "호랑이식당", "menu": "탄탄면", "score": 4.2},
-    {"name": "빠레뜨한남", "menu": "파스타", "score": 4.1},
-    {"name": "몽탄", "menu": "우대갈비", "score": 4.8},
-]
+# --- 2. 카카오 API 함수 (좌표 기반 검색) ---
+def search_places_by_coords(lat, lng, category_code, radius_meter):
+    """
+    내 좌표(lat, lng)를 기준으로 반경(radius) 내의 카테고리 장소를 검색함
+    """
+    url = "https://dapi.kakao.com/v2/local/search/category.json"
+    headers = {"Authorization": f"KakaoAK {st.secrets['KAKAO_API_KEY']}"}
+    params = {
+        "category_group_code": category_code, # FD6(식당), CE7(카페)
+        "x": lng, # 경도 (Longitude)
+        "y": lat, # 위도 (Latitude)
+        "radius": radius_meter, # 반경 (미터 단위)
+        "sort": "distance" # 거리순 정렬 (가까운 곳 우선) or accuracy
+    }
 
-cafe_db = [
-    {"name": "어니언", "tag": "한옥 감성", "white_score": 80},
-    {"name": "블루보틀", "tag": "미니멀 화이트", "white_score": 95},
-    {"name": "아우어베이커리", "tag": "더티초코 맛집", "white_score": 40},
-    {"name": "카멜커피", "tag": "빈티지 브라운", "white_score": 30},
-    {"name": "카페 노티드", "tag": "귀여운 도넛", "white_score": 85},
-    {"name": "테일러커피", "tag": "모던 심플", "white_score": 70},
-    {"name": "로우커피스탠드", "tag": "힙한 감성", "white_score": 60},
-]
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        data = response.json()
+        return data.get('documents', [])
+    except Exception as e:
+        st.error(f"API 오류: {e}")
+        return []
 
-# --- 3. 핵심 로직 함수 ---
-
-def get_random_coords(radius_km):
-    """중심지에서 랜덤한 거리와 방향을 계산하는 함수 (시각적 효과용)"""
-    angle = random.uniform(0, 360)
-    distance = random.uniform(0.1, radius_km)
+# --- 3. 추천 로직 ---
+def recommend_places(lat, lng, category_type, radius_km):
     
-    # 방향을 텍스트로 변환
-    directions = ["북쪽", "북동쪽", "동쪽", "남동쪽", "남쪽", "남서쪽", "서쪽", "북서쪽"]
-    dir_idx = int((angle / 45) % 8)
-    direction_str = directions[dir_idx]
+    radius_meter = int(radius_km * 1000) # km를 m로 변환
     
-    return distance, direction_str
+    if category_type == "식당":
+        code = "FD6"
+    else:
+        code = "CE7"
 
-def recommend_places(category, location, radius_km):
-    """위치와 카테고리를 받아 3개의 장소를 추천"""
-    results = []
+    # 1. API 호출
+    places = search_places_by_coords(lat, lng, code, radius_meter)
+
+    if not places:
+        return []
+
+    # 2. 랜덤 추천 (데이터가 많으면 3개 뽑기)
+    # 거리순으로 가져왔으니, 너무 가까운 곳만 나오지 않게 
+    # 상위 10개 중에서 3개를 랜덤으로 뽑는 식으로 섞어줌
+    candidates = places[:15] # 상위 15개 후보군
+    num_to_pick = min(3, len(candidates))
+    picks = random.sample(candidates, num_to_pick)
     
-    # 1. 랜덤 로직 수행 (시각적 표현)
-    dist, direction = get_random_coords(radius_km)
-    st.info(f"📍 '{location}' 기준 {direction}으로 {dist:.1f}km 떨어진 곳을 탐색했어요!")
+    return picks
+
+# --- 4. 앱 UI ---
+st.title("📍 소희야 어디갈까 (GPS Ver.)")
+st.write("내 위치 기준으로 맛집/카페를 찾아줄게!")
+
+# [GPS 버튼]
+# 이 버튼을 누르면 브라우저에서 '위치 권한 허용' 팝업이 뜹니다.
+loc = get_geolocation()
+
+if loc:
+    # 좌표 획득 성공 시
+    lat = loc['coords']['latitude']
+    lng = loc['coords']['longitude']
     
-    # 2. 데이터 뽑기 (랜덤으로 3개)
-    if category == "식당":
-        # 별점 4.0 이상만 필터링
-        candidates = [f for f in food_db if f['score'] >= 4.0]
-        picks = random.sample(candidates, 3) # 3개 랜덤 추출
-        
-        for p in picks:
-            results.append({
-                "name": p['name'],
-                "desc": f"⭐ {p['score']} | 대표메뉴: {p['menu']}",
-                "query": f"{location} {p['name']}", # 검색어 조합
-                "map_url": f"https://map.kakao.com/link/search/{location} {p['name']}" # 실제 링크
-            })
-            
-    else: # 카페
-        # '화이트' 점수가 높거나, 리뷰가 적은(신상) 컨셉으로 필터링 (여기선 랜덤)
-        picks = random.sample(cafe_db, 3)
-        
-        for p in picks:
-            is_white = "🤍 화이트톤 인테리어" if p['white_score'] >= 70 else "☕ 아늑한 분위기"
-            results.append({
-                "name": p['name'],
-                "desc": f"{is_white} | 특징: {p['tag']}",
-                "query": f"{location} {p['name']}",
-                "map_url": f"https://map.naver.com/v5/search/{location} {p['name']}" # 실제 링크
-            })
-            
-    return results
-
-# --- 4. 앱 화면 구성 (UI) ---
-
-st.title("📍 소희야 어디갈까")
-st.write("결정장애? 소희가 대신 골라줄게! (랜덤 추천)")
-
-# [수정 1] 내 위치 입력 받기
-location = st.text_input("지금 어디야?", placeholder="예: 강남역, 홍대입구, 성수동...")
-
-if location: # 위치가 입력되었을 때만 아래 내용 표시
+    st.success(f"📍 현재 위치 확인 완료! (위도: {lat:.4f}, 경도: {lng:.4f})")
     
-    tab1, tab2 = st.tabs(["🍚 밥 먹자 (식당)", "☕ 커피 한잔 (카페)"])
+    # 탭 메뉴
+    tab1, tab2 = st.tabs(["🍚 배고파 (식당)", "☕ 카페갈래 (카페)"])
 
     # --- 식당 탭 ---
     with tab1:
-        st.write("### 밥 먹으러 어디까지 갈 수 있어?")
-        # [수정 2] 거리 선택
-        radius_food = st.slider("이동 반경 (km)", 0.5, 5.0, 1.0, key="r_food")
+        st.info("내 주변 맛집을 찾아볼까?")
+        radius_food = st.slider("몇 km 까지 갈 수 있어?", 0.5, 3.0, 1.0, key="r_food")
         
-        if st.button("맛집 골라줘! (3곳 추천)", key="btn_food"):
-            with st.spinner(f"소희가 '{location}' 주변 맛집 탐색 중... 🧐"):
-                time.sleep(1.5) # 분석하는 척
-                recommendations = recommend_places("식당", location, radius_food)
+        if st.button("내 주변 맛집 추천해줘 (3곳)", key="btn_food"):
+            with st.spinner("소희가 주변 스캔 중... 📡"):
+                results = recommend_places(lat, lng, "식당", radius_food)
             
-            st.success("짜잔! 여기 어때?")
-            
-            # [수정 3] 결과물 3개 보여주기
-            for item in recommendations:
-                with st.container():
-                    st.markdown(f"""
-                    <div class="result-card">
-                        <h3 style="margin:0;">{item['name']}</h3>
-                        <p style="color:gray;">{item['desc']}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    # [수정 4] 실제 작동하는 링크 연결
-                    st.link_button(f"👉 {item['name']} 위치 보기 (카카오맵)", item['map_url'])
+            if results:
+                for place in results:
+                    # 거리 계산 (API가 주는 distance는 미터 단위)
+                    dist = int(place['distance'])
+                    dist_str = f"{dist}m" if dist < 1000 else f"{dist/1000:.1f}km"
+                    
+                    with st.container():
+                        st.markdown(f"""
+                        <div class="result-card">
+                            <h3 style="margin:0; color:#333;">{place['place_name']}</h3>
+                            <p style="color:#FF6F61; font-weight:bold; margin:5px 0;">
+                                {place['category_name'].split('>')[-1].strip()} 
+                                <span style="color:gray; font-weight:normal;">({dist_str} 거리)</span>
+                            </p>
+                            <p style="font-size:14px; color:gray; margin:0;">📍 {place['road_address_name']}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        st.link_button("👉 상세정보 & 길찾기", place['place_url'])
+            else:
+                st.warning("설정한 거리 안에는 식당이 없나 봐 ㅠㅠ 거리를 좀 늘려볼까?")
 
     # --- 카페 탭 ---
     with tab2:
-        st.write("### 카페는 어디까지 갈 거야?")
-        radius_cafe = st.slider("이동 반경 (km)", 0.5, 5.0, 2.0, key="r_cafe")
+        st.info("내 주변 예쁜 카페를 찾아볼까?")
+        radius_cafe = st.slider("몇 km 까지 갈 수 있어?", 0.5, 3.0, 1.0, key="r_cafe")
         
-        if st.button("예쁜 카페 골라줘! (3곳 추천)", key="btn_cafe"):
-            with st.spinner(f"소희가 '{location}' 근처 신상/화이트톤 카페 찾는 중... 🤍"):
-                time.sleep(1.5)
-                recommendations = recommend_places("카페", location, radius_cafe)
+        if st.button("내 주변 카페 추천해줘 (3곳)", key="btn_cafe"):
+            with st.spinner("소희가 카페 찾는 중... ☕"):
+                results = recommend_places(lat, lng, "카페", radius_cafe)
             
-            st.success("인생샷 건지러 가자!")
-            
-            for item in recommendations:
-                with st.container():
-                    st.markdown(f"""
-                    <div class="result-card">
-                        <h3 style="margin:0;">{item['name']}</h3>
-                        <p style="color:gray;">{item['desc']}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    st.link_button(f"👉 {item['name']} 위치 보기 (네이버 지도)", item['map_url'])
+            if results:
+                for place in results:
+                    dist = int(place['distance'])
+                    dist_str = f"{dist}m" if dist < 1000 else f"{dist/1000:.1f}km"
+                    
+                    with st.container():
+                        st.markdown(f"""
+                        <div class="result-card">
+                            <h3 style="margin:0; color:#333;">{place['place_name']}</h3>
+                            <p style="font-size:14px; color:gray; margin:5px 0;">
+                                📍 {place['road_address_name']} ({dist_str})
+                            </p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        st.link_button("👉 사진 보러가기", place['place_url'])
+            else:
+                st.warning("이 근처엔 카페가 안 보여... 😭")
 
 else:
-    # 위치 입력 안 했을 때 안내
-    st.info("👆 먼저 위칸에 '현재 위치'를 입력해줘!")
+    # GPS를 못 잡았거나 아직 버튼 안 눌렀을 때
+    st.info("👆 위에 있는 **[내 위치 찾기]** 버튼을 눌러줘!")
+    st.caption("※ 모바일에서는 '위치 권한 허용'을 꼭 해줘야 해!")
