@@ -19,9 +19,9 @@ st.markdown("""
     div[data-testid="stHorizontalBlock"] button[kind="secondary"] {
         background-color: #FEE500; color: black; border: none;
     }
-    /* 카페 탭 버튼 스타일 */
+    /* 카페 탭 버튼 스타일 (카카오 통일감을 위해 같은 노란색 계열이나 약간 다르게) */
     div[data-testid="stHorizontalBlock"] button[kind="primary"] {
-        background-color: #03C75A; color: white; border: none;
+        background-color: #FEE500; color: black; border: none;
     }
     .place-title {
         font-size: 20px; font-weight: bold; margin-bottom: 5px; color: #333;
@@ -156,18 +156,14 @@ if loc:
                     addr = p['road_address_name']
                     review_url = p['place_url'] # 카카오맵 상세페이지
                     
-                    # [좌표 확보]
                     dest_lat = p['y']
                     dest_lng = p['x']
                     
-                    # [길찾기 URL 수정] 출발지 좌표를 강제로 주입
-                    # format: from/출발지명,위도,경도/to/목적지명,위도,경도
+                    # 카카오맵 길찾기 URL (출발지: 내위치)
                     route_url = f"https://map.kakao.com/link/to/{name},{dest_lat},{dest_lng}/from/내위치,{cur_lat},{cur_lng}"
                     
-                    # 시간 계산
                     dist, mins = calculate_time_and_distance(cur_lat, cur_lng, float(dest_lat), float(dest_lng))
                     
-                    # [UI 표시]
                     with st.container():
                         st.markdown(f"""
                         <div class="result-box">
@@ -177,7 +173,6 @@ if loc:
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # 버튼 2개 나란히 배치
                         col1, col2 = st.columns(2)
                         with col1:
                             st.link_button("⭐ 리뷰 보기", review_url, use_container_width=True)
@@ -199,21 +194,17 @@ if loc:
                     cat = p['category_name'].split('>')[-1].strip()
                     addr = p['road_address_name']
                     
-                    # 네이버 검색 URL (리뷰 보기용)
-                    naver_search_url = f"https://m.search.naver.com/search.naver?query={name}"
+                    # [수정됨] 카카오맵 리뷰/상세 URL로 변경
+                    review_url = p['place_url'] 
                     
-                    # [좌표 확보]
                     dest_lat = p['y']
                     dest_lng = p['x']
                     
-                    # [네이버 길찾기 URL 수정] 출발지 좌표 강제 주입
-                    # slat, slng = 출발지 / dlat, dlng = 도착지
-                    naver_route_url = f"https://m.map.naver.com/route/public/list?slat={cur_lat}&slng={cur_lng}&sname=내위치&dlat={dest_lat}&dlng={dest_lng}&dname={name}&mode=transit"
+                    # [수정됨] 카카오맵 길찾기 URL로 변경
+                    route_url = f"https://map.kakao.com/link/to/{name},{dest_lat},{dest_lng}/from/내위치,{cur_lat},{cur_lng}"
                     
-                    # 시간 계산
                     dist, mins = calculate_time_and_distance(cur_lat, cur_lng, float(dest_lat), float(dest_lng))
 
-                    # [UI 표시]
                     with st.container():
                         st.markdown(f"""
                         <div class="result-box">
@@ -223,12 +214,12 @@ if loc:
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # 버튼 2개 나란히 배치
                         col1, col2 = st.columns(2)
                         with col1:
-                            st.link_button("🔎 리뷰 보기", naver_search_url, use_container_width=True)
+                            # 카카오맵 아이콘 느낌을 위해 별(⭐) 아이콘 사용
+                            st.link_button("⭐ 리뷰 보기", review_url, use_container_width=True)
                         with col2:
-                            st.link_button("🚀 길찾기", naver_route_url, use_container_width=True)
+                            st.link_button("🚀 길찾기", route_url, use_container_width=True)
 
 else:
     st.info("👆 [내 위치 찾기] 버튼을 눌러주세요.")
